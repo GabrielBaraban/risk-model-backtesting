@@ -46,6 +46,7 @@ MODELS: dict[str, ModelFn] = {
     "gaussian": gaussian_var_es,
     "student_t": student_t_var_es,
     "garch": garch_var_es,
+    "garch_t": lambda window, alpha: garch_var_es(window, alpha, dist="t"),
 }
 
 REPORTS_DIR = Path(__file__).resolve().parent / "reports"

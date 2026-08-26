@@ -17,7 +17,7 @@ whether to believe it? Three things have to be true:
    be an accurate estimate of how bad the loss actually is. A model can get
    the rate and timing right and still badly underestimate tail severity.
 
-This project forecasts one-day VaR/ES with four models of increasing
+This project forecasts one-day VaR/ES with five models of increasing
 sophistication, then formally tests all three properties against realized
 returns.
 
@@ -26,7 +26,8 @@ returns.
 - **Data**: daily adjusted-close prices → 1-day log returns for a single
   ticker, walk-forward (rolling window, no lookahead).
 - **Models**: historical simulation, Gaussian (parametric normal), Student-t
-  (fat-tailed parametric), GARCH(1,1) (conditional volatility).
+  (fat-tailed parametric), GARCH(1,1) (conditional volatility) — tested with
+  both Gaussian and Student-t innovations (`garch`, `garch_t`).
 - **Backtests**:
   - Kupiec (1995) proportion-of-failures (POF) test — is the breach rate
     correct?
@@ -47,49 +48,57 @@ returns.
 | gaussian | 100.7 | 105 | 0.6586 | 0.0000 | 0.0000 | FAIL independence, severity |
 | student_t | 100.7 | 120 | 0.0545 | 0.0000 | 0.8027 | FAIL independence |
 | garch | 100.7 | 118 | 0.0838 | 0.4197 | 0.0000 | FAIL severity |
+| garch_t | 100.7 | 130 | 0.0040 | 0.2083 | 0.0869 | FAIL coverage |
 
 ![breaches](reports/var_breaches.png)
 
 ## Key finding
 
-No model passes all three tests, and the two closest results fail in
-opposite ways. Historical, Gaussian, and GARCH all get the breach *rate*
-roughly right, but historical and Gaussian breaches cluster tightly around
-the March 2020 crash (Christoffersen p ≈ 0) — a constant-width band fit to
-unconditional history can't react to a sudden change in volatility regime.
+No model passes all three tests. Historical, Gaussian, and GARCH all get the
+breach *rate* roughly right, but historical and Gaussian breaches cluster
+tightly around the March 2020 crash (Christoffersen p ≈ 0) — a
+constant-width band fit to unconditional history can't react to a sudden
+change in volatility regime.
 
 GARCH(1,1) is built to react to exactly that: by forecasting conditional
 volatility, its VaR band widens during the crash and narrows afterward, so
-its breaches are independent (p = 0.42) — the only model to clear that bar.
-But GARCH here still assumes *Gaussian* shocks once volatility is accounted
-for, and that assumption is wrong: even after conditioning on volatility,
-realized breach-day losses are worse than a Gaussian tail predicts, so it
-fails the severity test decisively (p ≈ 0). Student-t is the mirror image —
-its fat-tailed distribution correctly sizes breach severity (p = 0.80, the
-only pass), but because it's still fit to the unconditional window it
-doesn't react to the volatility regime shift any better than Gaussian does,
-and also fails independence.
+its breaches are independent (p = 0.42). But GARCH here still assumes
+*Gaussian* shocks once volatility is accounted for, and that assumption is
+wrong: even after conditioning on volatility, realized breach-day losses are
+worse than a Gaussian tail predicts, so it fails the severity test
+decisively (p ≈ 0). Student-t is the mirror image — its fat-tailed
+distribution correctly sizes breach severity (p = 0.80), but because it's
+still fit to the unconditional window it doesn't react to the volatility
+regime shift any better than Gaussian does, and also fails independence.
 
-In other words: getting the *timing* of risk right (GARCH) and getting the
-*size* of tail losses right (Student-t) came from two different mechanisms
-here, and neither model has both. The natural next experiment — supported
-by the existing code via `garch_var_es(window, alpha, dist="t")` — is GARCH
-with Student-t innovations instead of Gaussian ones, which should combine
-conditional volatility with fat tails and might be the first model to pass
-all three tests.
+The natural next experiment is GARCH with Student-t innovations (`garch_t`)
+— combining conditional volatility with fat tails. It does fix both prior
+failures: independence holds (p = 0.21) and severity holds (p = 0.087). But
+it trades them for a new one. It breaches 130 times against 100.7 expected
+(6.46% vs. the 5% target), and Kupiec rejects the breach rate decisively
+(p = 0.004) — the only model to fail on *coverage*.
+
+The cause isn't the fatter tail itself — a Student-t quantile at the same
+alpha is more extreme than the Gaussian one, which should widen VaR, not
+tighten it. It's that GARCH's parameters are refit separately under each
+likelihood: `garch_t`'s conditional-volatility path isn't "`garch`'s sigma
+plus a fatter tail bolted on," it's a different fitted volatility path from
+a different MLE, one that on ~72% of days comes out tighter (mean VaR 1.49%
+vs. `garch`'s 1.55%). That tightening in the volatility fit outweighs the
+tail-widening effect of the fatter quantile, and the breach rate rises
+instead of falling.
+
+So combining the two mechanisms didn't produce the model that passes all
+three checks — it produced a third, different failure mode. Of the three
+more sophisticated models, each isolates exactly one of the three
+properties as its failure: Student-t fails independence, GARCH(normal)
+fails severity, GARCH-t fails coverage. Getting all three right
+simultaneously, on this ticker/window, didn't happen by combining the
+fixes for the other two.
 
 ## Limitations
 
 - Single-asset, single-ticker analysis — no portfolio effects.
-- The Christoffersen independence test and the McNeil-Frey ES test are both
-  measurably conservative at these sample sizes: simulating well-calibrated
-  synthetic sequences at n≈200-2000 gave false-positive rates of ~1.8% and
-  ~2.5% respectively against a nominal 5% significance level. A single
-  "PASS" at this sample size is suggestive, not definitive.
-- GARCH is only tested with Gaussian innovations here (`dist="normal"`,
-  the default); the code supports Student-t innovations
-  (`dist="t"`) but that combination isn't in the current results — see Key
-  finding above.
 - No regime-switching or structural-break handling in the GARCH model.
 - Model parameters are refit on every rolling window — no parameter
   stability analysis.
@@ -105,9 +114,13 @@ pytest
 
 ## Possible extensions
 
-- **GARCH with Student-t innovations**: add `"garch_t"` to `run.py`'s
-  `MODELS` dict as `lambda w, a: garch_var_es(w, a, dist="t")` and re-run —
-  the natural follow-up to the severity result above.
+- **Isolate the GARCH-t volatility gap**: `garch_t`'s conditional-volatility
+  path differs from `garch`'s because the two are fit under different
+  likelihoods, not just different tail quantiles (see Key finding). Refit
+  GARCH once and swap only the innovation distribution when computing
+  VaR/ES, to separate "fatter tail, same volatility path" from "different
+  volatility path entirely," and see which effect is actually responsible
+  for the coverage failure.
 - **Extreme Value Theory**: fit a Generalized Pareto Distribution to
   exceedances over a high threshold (Peaks-Over-Threshold) and derive
   VaR/ES from the tail fit instead of the full return distribution — the
@@ -116,8 +129,9 @@ pytest
   or lower) where sample quantiles get noisy.
 - **Multiple tickers / asset classes**: re-run across a few names with
   different tail behavior (a single stock, something less liquid, a
-  non-equity) to check whether the GARCH-wins-independence /
-  Student-t-wins-severity split holds generally or is SPY-specific.
+  non-equity) to check whether the three-way split — Student-t fails
+  independence, GARCH(normal) fails severity, GARCH-t fails coverage —
+  holds generally or is SPY-specific.
 
 ## References
 

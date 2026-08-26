@@ -35,6 +35,7 @@ from __future__ import annotations
 
 import numpy as np
 from scipy import stats
+from scipy.special import gammaln
 from arch import arch_model
 
 def historical_var_es(window: np.ndarray, alpha: float) -> tuple[float, float]:
@@ -150,17 +151,6 @@ def garch_var_es(
     volatility and combines it with a chosen innovation distribution to
     get VaR/ES.
 
-    Formula sketch:
-        1. Fit `arch.arch_model(window, vol="Garch", p=1, q=1, dist=dist)`
-        2. Forecast 1-step-ahead conditional mean (mu_t+1) and conditional
-           volatility (sigma_t+1) from the fitted model
-        3. Combine with the `dist` innovation quantile/tail-expectation
-           the same way `gaussian_var_es` / `student_t_var_es` do, but
-           using (mu_t+1, sigma_t+1) instead of the unconditional sample
-           mean/std:
-               VaR = -(mu_t+1 + sigma_t+1 * q_dist(alpha))
-               ES  = -(mu_t+1 - sigma_t+1 * es_factor_dist(alpha))
-
     Args:
         window: 1-D array of past log returns, most recent last.
         alpha: tail probability, e.g. 0.05.
@@ -210,13 +200,31 @@ def garch_var_es(
 
         var = -(mu_next + sigma_next * z)
 
-        partial_mean = float(
-            distribution.partial_moment(
-                1,
-                z,
-                shape_params,
-            )
+        nu = float(shape_params[0])
+
+        # `distribution.partial_moment` standardizes to unit variance
+        # (scale = sqrt((nu-2)/nu)), converts z to the raw t_nu domain,
+        # applies the Winkler et al. (1972) closed form via the raw
+        # (non-log) gamma function, then rescales back. That raw gamma
+        # ratio overflows to inf/nan once nu is large enough (roughly
+        # nu > 340) that the fitted Student-t is numerically
+        # indistinguishable from Gaussian — which happens in practice on
+        # low-kurtosis windows. Reproduce the same transform, but with
+        # the gamma ratio computed in log-space so it stays finite for
+        # any fitted nu.
+        scale = np.sqrt((nu - 2) / nu)
+        z_raw = z / scale
+
+        log_c = (
+            gammaln(0.5 * (nu + 1))
+            - gammaln(0.5 * nu)
+            - 0.5 * np.log(nu * np.pi)
         )
+        e = 0.5 * (nu + 1)
+        raw_moment = (0.5 * (np.exp(log_c) * nu) / (1 - e)) * (
+            (1 + (z_raw**2) / nu) ** (1 - e)
+        )
+        partial_mean = scale * raw_moment
 
         conditional_tail_mean = partial_mean / alpha
 
