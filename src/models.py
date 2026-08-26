@@ -170,9 +170,6 @@ def garch_var_es(
     Returns:
         (VaR, ES) as positive loss magnitudes.
     """
-    # arch's optimizer is documented to converge unreliably on data scaled
-    # like raw daily returns (~1e-2); rescale up for fitting/forecasting,
-    # then rescale the forecasted mean/vol back down before returning.
     scale = 100.0
 
     model = arch_model(
