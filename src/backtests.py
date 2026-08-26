@@ -255,14 +255,11 @@ def es_backtest(
 
     breaches = breach_indicator(actual, var_forecast)
 
-    # ES backtest needs enough tail observations to estimate severity.
     if breaches.sum() < 2:
         return np.nan, np.nan
 
-    # Positive realized loss magnitudes on breach days.
     losses = -actual[breaches]
 
-    # If ES is correctly calibrated, these should average around zero.
     residuals = losses - es_forecast[breaches]
 
     mean_residual = float(residuals.mean())
@@ -279,9 +276,6 @@ def es_backtest(
 
     bootstrap_means = bootstrap_samples.mean(axis=1)
 
-    # One-sided test:
-    # small p => observed residual distribution strongly suggests
-    # realized breach losses exceed forecast ES.
     p_value = float(np.mean(bootstrap_means <= 0))
 
     return mean_residual, p_value
