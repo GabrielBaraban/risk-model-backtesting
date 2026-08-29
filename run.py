@@ -18,7 +18,7 @@ from typing import Callable
 
 import matplotlib
 
-matplotlib.use("Agg")  # headless: this script only ever saves a PNG
+matplotlib.use("Agg") 
 
 import matplotlib.pyplot as plt
 import numpy as np
@@ -101,9 +101,7 @@ def rolling_forecasts(
     es_forecast = np.empty(n - window)
 
     for i, t in enumerate(range(window, n)):
-        # IMPORTANT:
-        # Python slicing excludes the right endpoint, so this uses
-        # t-window, ..., t-1 and does NOT include return[t].
+        
         train_window = values[t - window : t]
 
         var_t, es_t = model_fn(train_window, alpha)
@@ -133,19 +131,11 @@ def safe_backtests(
     n = len(breaches)
     x = int(breaches.sum())
 
-    # Kupiec is still mathematically computable with x=0 or x=n
-    # if src/backtests.py handles 0^0 correctly.
     try:
         kupiec_stat, kupiec_p = kupiec_pof(breaches, alpha)
     except (ValueError, ZeroDivisionError, FloatingPointError):
         kupiec_stat, kupiec_p = np.nan, np.nan
 
-    # Independence requires transitions.
-    #
-    # With fewer than two observations there are none.
-    # With all breaches or no breaches, the Markov comparison is
-    # degenerate and is not informative, so report NaN instead of
-    # pretending that the test passed.
     if n < 2 or x == 0 or x == n:
         ind_stat, ind_p = np.nan, np.nan
         cc_stat, cc_p = np.nan, np.nan
@@ -375,7 +365,6 @@ def main() -> None:
 
     results = pd.DataFrame(rows)
 
-    # Make terminal output easier to read.
     float_columns = [
         "breach_rate",
         "kupiec_stat",
