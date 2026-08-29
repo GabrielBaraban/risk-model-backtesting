@@ -202,16 +202,6 @@ def garch_var_es(
 
         nu = float(shape_params[0])
 
-        # `distribution.partial_moment` standardizes to unit variance
-        # (scale = sqrt((nu-2)/nu)), converts z to the raw t_nu domain,
-        # applies the Winkler et al. (1972) closed form via the raw
-        # (non-log) gamma function, then rescales back. That raw gamma
-        # ratio overflows to inf/nan once nu is large enough (roughly
-        # nu > 340) that the fitted Student-t is numerically
-        # indistinguishable from Gaussian — which happens in practice on
-        # low-kurtosis windows. Reproduce the same transform, but with
-        # the gamma ratio computed in log-space so it stays finite for
-        # any fitted nu.
         scale = np.sqrt((nu - 2) / nu)
         z_raw = z / scale
 
