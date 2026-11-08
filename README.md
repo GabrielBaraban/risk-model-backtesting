@@ -112,27 +112,6 @@ python run.py --ticker SPY --alpha 0.05 --window 250 --start 2015-01-01
 pytest
 ```
 
-## Possible extensions
-
-- **Isolate the GARCH-t volatility gap**: `garch_t`'s conditional-volatility
-  path differs from `garch`'s because the two are fit under different
-  likelihoods, not just different tail quantiles (see Key finding). Refit
-  GARCH once and swap only the innovation distribution when computing
-  VaR/ES, to separate "fatter tail, same volatility path" from "different
-  volatility path entirely," and see which effect is actually responsible
-  for the coverage failure.
-- **Extreme Value Theory**: fit a Generalized Pareto Distribution to
-  exceedances over a high threshold (Peaks-Over-Threshold) and derive
-  VaR/ES from the tail fit instead of the full return distribution — the
-  standard next step beyond parametric/historical methods in McNeil, Frey &
-  Embrechts, and typically strongest in the very far tail (e.g. alpha=0.01
-  or lower) where sample quantiles get noisy.
-- **Multiple tickers / asset classes**: re-run across a few names with
-  different tail behavior (a single stock, something less liquid, a
-  non-equity) to check whether the three-way split — Student-t fails
-  independence, GARCH(normal) fails severity, GARCH-t fails coverage —
-  holds generally or is SPY-specific.
-
 ## References
 
 - Kupiec, P. (1995). "Techniques for Verifying the Accuracy of Risk
